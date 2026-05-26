@@ -719,19 +719,62 @@ with st.sidebar:
 
 # 在侧边栏外部添加一个明显的按钮，用于展开/收起侧边栏
 # 使用 st.button 放在主界面顶部，点击后通过 JavaScript 切换侧边栏
-if st.button("☰ 控制台", key="toggle_sidebar"):
-    st.components.v1.html(
-        """
-        <script>
+# 修复手机端点击无反应的问题：改用 st.markdown 注入可点击的 HTML 按钮
+st.markdown(
+    """
+    <style>
+    /* 控制台切换按钮样式 */
+    .toggle-sidebar-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 9999;
+        background: linear-gradient(135deg, #d4af37, #b8860b);
+        color: #1a1a2e;
+        border: none;
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .toggle-sidebar-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    }
+    .toggle-sidebar-btn:active {
+        transform: scale(0.95);
+    }
+    </style>
+    <button class="toggle-sidebar-btn" id="toggleSidebarBtn" onclick="toggleSidebar()">☰</button>
+    <script>
+    function toggleSidebar() {
         const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
         if (sidebar) {
             const currentDisplay = sidebar.style.display;
             sidebar.style.display = currentDisplay === 'none' ? 'block' : 'none';
         }
-        </script>
-        """,
-        height=0,
-    )
+    }
+    // 确保按钮在手机端也能响应点击
+    document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('toggleSidebarBtn');
+        if (btn) {
+            btn.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                toggleSidebar();
+            }, {passive: false});
+        }
+    });
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
 
 # 主界面标题
 st.title("Testing")
