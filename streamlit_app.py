@@ -720,15 +720,16 @@ with st.sidebar:
 # 在侧边栏外部添加一个明显的按钮，用于展开/收起侧边栏
 # 使用 st.button 放在主界面顶部，点击后通过 JavaScript 切换侧边栏
 # 修复手机端点击无反应的问题：改用 st.markdown 注入可点击的 HTML 按钮
+# 彻底重写：使用 st.components.v1.html 注入独立 iframe 避免 Streamlit 事件冲突
+# 再次修复：使用 st.markdown 直接注入按钮和脚本，避免 iframe 隔离问题
 st.markdown(
     """
     <style>
-    /* 控制台切换按钮样式 */
     .toggle-sidebar-btn {
         position: fixed;
         top: 10px;
         left: 10px;
-        z-index: 9999;
+        z-index: 99999;
         background: linear-gradient(135deg, #d4af37, #b8860b);
         color: #1a1a2e;
         border: none;
@@ -743,6 +744,8 @@ st.markdown(
         justify-content: center;
         transition: all 0.2s;
         -webkit-tap-highlight-color: transparent;
+        user-select: none;
+        -webkit-user-select: none;
     }
     .toggle-sidebar-btn:hover {
         transform: scale(1.1);
@@ -752,25 +755,34 @@ st.markdown(
         transform: scale(0.95);
     }
     </style>
-    <button class="toggle-sidebar-btn" id="toggleSidebarBtn" onclick="toggleSidebar()">☰</button>
+    <button class="toggle-sidebar-btn" id="toggleSidebarBtn">☰</button>
     <script>
-    function toggleSidebar() {
-        const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
-        if (sidebar) {
-            const currentDisplay = sidebar.style.display;
-            sidebar.style.display = currentDisplay === 'none' ? 'block' : 'none';
+    (function() {
+        var btn = document.getElementById('toggleSidebarBtn');
+        if (!btn) return;
+        function toggleSidebar() {
+            var sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+            if (sidebar) {
+                var currentDisplay = sidebar.style.display;
+                sidebar.style.display = currentDisplay === 'none' ? 'block' : 'none';
+            }
         }
-    }
-    // 确保按钮在手机端也能响应点击
-    document.addEventListener('DOMContentLoaded', function() {
-        const btn = document.getElementById('toggleSidebarBtn');
-        if (btn) {
-            btn.addEventListener('touchstart', function(e) {
-                e.preventDefault();
-                toggleSidebar();
-            }, {passive: false});
-        }
-    });
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSidebar();
+        });
+        btn.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSidebar();
+        }, {passive: false});
+        // 确保按钮在 iframe 中可见
+        btn.style.position = 'fixed';
+        btn.style.top = '10px';
+        btn.style.left = '10px';
+        btn.style.zIndex = '99999';
+    })();
     </script>
     """,
     unsafe_allow_html=True,
