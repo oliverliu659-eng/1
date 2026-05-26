@@ -679,14 +679,21 @@ if "event_step_counter" not in st.session_state:
 if "last_event_turn" not in st.session_state:
     st.session_state.last_event_turn = -5
 
-# 侧边栏控制台
 with st.sidebar:
-    with st.expander("控制台 / 角色背景", expanded=True):
-        if st.button("重置对话"):
-            st.session_state.messages = create_messages()
-            clear_scene_memory()
-            st.rerun()
-        if st.button("导出对话存档"):
+    st.header("⚙️ 游戏菜单")
+    
+    # 1. 重新开始按钮
+    if st.button("🔄 重新开始这段关系"):
+        st.session_state.messages = create_messages()
+        clear_scene_memory()
+        st.rerun()
+    
+    # 2. 控制台与角色背景（必须用 expander）
+    with st.expander("📜 控制台 / 角色背景", expanded=False):
+        # 角色背景
+        st.markdown(get_role_background())
+        # 导出对话存档
+        if st.button("📥 导出对话存档"):
             data = {
                 "messages": st.session_state.messages,
                 "scene_memory": get_scene_memory(),
@@ -698,8 +705,7 @@ with st.sidebar:
                 file_name="conversation_export.json",
                 mime="application/json",
             )
-        with st.expander("角色背景"):
-            st.markdown(get_role_background())
+        # 主题切换
         st.markdown("---")
         st.markdown("**主题切换**")
         theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
