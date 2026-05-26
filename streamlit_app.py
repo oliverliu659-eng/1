@@ -407,142 +407,265 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 自定义 CSS 美化背景（深邃黑金渐变色，沉浸式恋爱游戏风格）
-st.markdown(
-    """
-    <style>
-    /* 隐藏 Streamlit 默认的 Deploy 按钮和菜单 */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
+# 背景主题选择（存储在 session_state 中）
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark_gold"
 
-    /* 整体背景渐变：深灰黑 → 暗夜蓝，带微弱暗金色 */
-    .stApp {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%);
-        color: #f0e6d3;
-    }
+# 根据当前主题生成 CSS
+def _get_theme_css(theme: str) -> str:
+    if theme == "dark_gold":
+        return """
+        /* 隐藏 Streamlit 默认的 Deploy 按钮和菜单 */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
 
-    /* 侧边栏背景 */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f3460 0%, #1a1a2e 100%);
-        border-right: 1px solid #2a2a4a;
-    }
+        /* 整体背景渐变：深灰黑 → 暗夜蓝，带微弱暗金色 */
+        .stApp {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%);
+            color: #f0e6d3;
+        }
 
-    /* 侧边栏文字颜色 */
-    section[data-testid="stSidebar"] .stMarkdown,
-    section[data-testid="stSidebar"] .stButton button {
-        color: #f0e6d3;
-    }
+        /* 侧边栏背景 */
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0f3460 0%, #1a1a2e 100%);
+            border-right: 1px solid #2a2a4a;
+        }
 
-    /* 聊天消息气泡 */
-    .stChatMessage {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 12px 18px;
-        margin-bottom: 10px;
-        backdrop-filter: blur(6px);
-        border: 1px solid rgba(255, 215, 0, 0.2);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
+        /* 侧边栏文字颜色 */
+        section[data-testid="stSidebar"] .stMarkdown,
+        section[data-testid="stSidebar"] .stButton button {
+            color: #f0e6d3;
+        }
 
-    /* 用户消息气泡 */
-    .stChatMessage[data-testid="user"] {
-        background: rgba(255, 215, 0, 0.08);
-        border-left: 4px solid #d4af37;
-    }
+        /* 聊天消息气泡 */
+        .stChatMessage {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 12px 18px;
+            margin-bottom: 10px;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
 
-    /* AI 消息气泡 */
-    .stChatMessage[data-testid="assistant"] {
-        background: rgba(255, 255, 255, 0.06);
-        border-left: 4px solid #c0a060;
-    }
+        /* 用户消息气泡 */
+        .stChatMessage[data-testid="user"] {
+            background: rgba(255, 215, 0, 0.08);
+            border-left: 4px solid #d4af37;
+        }
 
-    /* 输入框 */
-    .stChatInput {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid #d4af37;
-        border-radius: 24px;
-        color: #f0e6d3;
-        padding: 8px 16px;
-    }
-    .stChatInput input {
-        color: #f0e6d3;
-    }
+        /* AI 消息气泡 */
+        .stChatMessage[data-testid="assistant"] {
+            background: rgba(255, 255, 255, 0.06);
+            border-left: 4px solid #c0a060;
+        }
 
-    /* 标题 */
-    h1 {
-        color: #d4af37;
-        text-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
-        font-family: 'Georgia', serif;
-        font-weight: 400;
-        letter-spacing: 1px;
-    }
+        /* 输入框 */
+        .stChatInput {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid #d4af37;
+            border-radius: 24px;
+            color: #f0e6d3;
+            padding: 8px 16px;
+        }
+        .stChatInput input {
+            color: #f0e6d3;
+        }
 
-    /* 按钮 */
-    .stButton button {
-        background: linear-gradient(135deg, #d4af37, #b8860b);
-        color: #1a1a2e;
-        border: none;
-        border-radius: 10px;
-        padding: 8px 20px;
-        font-weight: 500;
-        transition: all 0.2s;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    }
-    .stButton button:hover {
-        background: linear-gradient(135deg, #b8860b, #a0760a);
-        transform: scale(1.03);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    }
+        /* 标题 */
+        h1 {
+            color: #d4af37;
+            text-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+            font-family: 'Georgia', serif;
+            font-weight: 400;
+            letter-spacing: 1px;
+        }
 
-    /* 展开器 */
-    .stExpander {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 215, 0, 0.2);
-        border-radius: 12px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-    }
-    .stExpander summary {
-        color: #d4af37;
-        font-weight: 500;
-    }
+        /* 按钮 */
+        .stButton button {
+            background: linear-gradient(135deg, #d4af37, #b8860b);
+            color: #1a1a2e;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-weight: 500;
+            transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .stButton button:hover {
+            background: linear-gradient(135deg, #b8860b, #a0760a);
+            transform: scale(1.03);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
 
-    /* 滚动条 */
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-    ::-webkit-scrollbar-track {
-        background: rgba(0,0,0,0.2);
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #d4af37;
-        border-radius: 4px;
-    }
+        /* 展开器 */
+        .stExpander {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+        .stExpander summary {
+            color: #d4af37;
+            font-weight: 500;
+        }
 
-    /* 侧边栏标题 */
-    section[data-testid="stSidebar"] h2 {
-        color: #d4af37;
-        font-family: 'Georgia', serif;
-        font-weight: 400;
-    }
+        /* 滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d4af37;
+            border-radius: 4px;
+        }
 
-    /* 下载按钮 */
-    .stDownloadButton button {
-        background: linear-gradient(135deg, #d4af37, #b8860b);
-        color: #1a1a2e;
-        border: none;
-        border-radius: 10px;
-        padding: 8px 20px;
-        font-weight: 500;
-        transition: all 0.2s;
-    }
-    .stDownloadButton button:hover {
-        background: linear-gradient(135deg, #b8860b, #a0760a);
-        transform: scale(1.03);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+        /* 侧边栏标题 */
+        section[data-testid="stSidebar"] h2 {
+            color: #d4af37;
+            font-family: 'Georgia', serif;
+            font-weight: 400;
+        }
+
+        /* 下载按钮 */
+        .stDownloadButton button {
+            background: linear-gradient(135deg, #d4af37, #b8860b);
+            color: #1a1a2e;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .stDownloadButton button:hover {
+            background: linear-gradient(135deg, #b8860b, #a0760a);
+            transform: scale(1.03);
+        }
+        """
+    elif theme == "light_rose":
+        return """
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+
+        .stApp {
+            background: linear-gradient(135deg, #fdf6f0 0%, #f5ebe0 50%, #e8d5c4 100%);
+            color: #3d2b1f;
+        }
+
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #e8d5c4 0%, #f5ebe0 100%);
+            border-right: 1px solid #d4b59b;
+        }
+
+        section[data-testid="stSidebar"] .stMarkdown,
+        section[data-testid="stSidebar"] .stButton button {
+            color: #3d2b1f;
+        }
+
+        .stChatMessage {
+            background: rgba(255,255,255,0.9);
+            border-radius: 16px;
+            padding: 12px 18px;
+            margin-bottom: 10px;
+            backdrop-filter: blur(6px);
+            border: 1px solid #e0cbb8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .stChatMessage[data-testid="user"] {
+            background: rgba(200,160,120,0.15);
+            border-left: 4px solid #b5835a;
+        }
+
+        .stChatMessage[data-testid="assistant"] {
+            background: rgba(255,255,255,0.95);
+            border-left: 4px solid #c9a96e;
+        }
+
+        .stChatInput {
+            background: rgba(255,255,255,0.95);
+            border: 1px solid #b5835a;
+            border-radius: 24px;
+            color: #3d2b1f;
+            padding: 8px 16px;
+        }
+        .stChatInput input {
+            color: #3d2b1f;
+        }
+
+        h1 {
+            color: #7a4a2e;
+            text-shadow: 0 0 12px rgba(122,74,46,0.15);
+            font-family: 'Georgia', serif;
+            font-weight: 400;
+            letter-spacing: 1px;
+        }
+
+        .stButton button {
+            background: linear-gradient(135deg, #b5835a, #9c6b48);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-weight: 500;
+            transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .stButton button:hover {
+            background: linear-gradient(135deg, #9c6b48, #7a4a2e);
+            transform: scale(1.03);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .stExpander {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #e0cbb8;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+        }
+        .stExpander summary {
+            color: #7a4a2e;
+            font-weight: 500;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.04);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #b5835a;
+            border-radius: 4px;
+        }
+
+        section[data-testid="stSidebar"] h2 {
+            color: #7a4a2e;
+            font-family: 'Georgia', serif;
+            font-weight: 400;
+        }
+
+        .stDownloadButton button {
+            background: linear-gradient(135deg, #b5835a, #9c6b48);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .stDownloadButton button:hover {
+            background: linear-gradient(135deg, #9c6b48, #7a4a2e);
+            transform: scale(1.03);
+        }
+        """
+    else:
+        return ""
+
+# 注入当前主题的 CSS
+st.markdown(f"<style>{_get_theme_css(st.session_state.theme)}</style>", unsafe_allow_html=True)
 
 # 初始化 session_state
 if "messages" not in st.session_state:
