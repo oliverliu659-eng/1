@@ -681,112 +681,40 @@ if "last_event_turn" not in st.session_state:
 
 # 侧边栏控制台
 with st.sidebar:
-    st.header("控制台")
-    if st.button("重置对话"):
-        st.session_state.messages = create_messages()
-        clear_scene_memory()
-        st.rerun()
-    if st.button("导出对话存档"):
-        data = {
-            "messages": st.session_state.messages,
-            "scene_memory": get_scene_memory(),
-        }
-        json_str = json.dumps(data, ensure_ascii=False, indent=2)
-        st.download_button(
-            label="下载 JSON",
-            data=json_str,
-            file_name="conversation_export.json",
-            mime="application/json",
-        )
-    with st.expander("角色背景"):
-        st.markdown(get_role_background())
-    # 显示当前主题选择
-    st.markdown("---")
-    st.markdown("**主题切换**")
-    theme_options = ["dark_gold", "light_rose"]
-    theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
-    current_label = theme_labels.get(st.session_state.theme, st.session_state.theme)
-    st.markdown(f"当前主题：**{current_label}**")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("暗金"):
-            st.session_state.theme = "dark_gold"
+    with st.expander("控制台 / 角色背景", expanded=True):
+        if st.button("重置对话"):
+            st.session_state.messages = create_messages()
+            clear_scene_memory()
             st.rerun()
-    with col2:
-        if st.button("浅玫瑰"):
-            st.session_state.theme = "light_rose"
-            st.rerun()
-
-# 在侧边栏外部添加一个明显的按钮，用于展开/收起侧边栏
-# 使用 st.button 放在主界面顶部，点击后通过 JavaScript 切换侧边栏
-# 修复手机端点击无反应的问题：改用 st.markdown 注入可点击的 HTML 按钮
-# 彻底重写：使用 st.components.v1.html 注入独立 iframe 避免 Streamlit 事件冲突
-# 再次修复：使用 st.markdown 直接注入按钮和脚本，避免 iframe 隔离问题
-st.markdown(
-    """
-    <style>
-    .toggle-sidebar-btn {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        z-index: 99999;
-        background: linear-gradient(135deg, #d4af37, #b8860b);
-        color: #1a1a2e;
-        border: none;
-        border-radius: 50%;
-        width: 48px;
-        height: 48px;
-        font-size: 24px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s;
-        -webkit-tap-highlight-color: transparent;
-        user-select: none;
-        -webkit-user-select: none;
-    }
-    .toggle-sidebar-btn:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.4);
-    }
-    .toggle-sidebar-btn:active {
-        transform: scale(0.95);
-    }
-    </style>
-    <button class="toggle-sidebar-btn" id="toggleSidebarBtn">☰</button>
-    <script>
-    (function() {
-        var btn = document.getElementById('toggleSidebarBtn');
-        if (!btn) return;
-        function toggleSidebar() {
-            var sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
-            if (sidebar) {
-                var currentDisplay = sidebar.style.display;
-                sidebar.style.display = currentDisplay === 'none' ? 'block' : 'none';
+        if st.button("导出对话存档"):
+            data = {
+                "messages": st.session_state.messages,
+                "scene_memory": get_scene_memory(),
             }
-        }
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleSidebar();
-        });
-        btn.addEventListener('touchstart', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleSidebar();
-        }, {passive: false});
-        // 确保按钮在 iframe 中可见
-        btn.style.position = 'fixed';
-        btn.style.top = '10px';
-        btn.style.left = '10px';
-        btn.style.zIndex = '99999';
-    })();
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
+            json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="下载 JSON",
+                data=json_str,
+                file_name="conversation_export.json",
+                mime="application/json",
+            )
+        with st.expander("角色背景"):
+            st.markdown(get_role_background())
+        st.markdown("---")
+        st.markdown("**主题切换**")
+        theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
+        current_label = theme_labels.get(st.session_state.theme, st.session_state.theme)
+        st.markdown(f"当前主题：**{current_label}**")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("暗金"):
+                st.session_state.theme = "dark_gold"
+                st.rerun()
+        with col2:
+            if st.button("浅玫瑰"):
+                st.session_state.theme = "light_rose"
+                st.rerun()
+
 
 # 主界面标题
 st.title("Testing")
