@@ -688,10 +688,12 @@ with st.sidebar:
         clear_scene_memory()
         st.rerun()
     
-    # 2. 控制台与角色背景（必须用 expander）
-    with st.expander("📜 控制台 / 角色背景", expanded=False):
-        # 角色背景
+    # 2. 角色背景（单独的 expander）
+    with st.expander("📜 角色背景", expanded=False):
         st.markdown(get_role_background())
+    
+    # 3. 导出与主题切换（单独的 expander）
+    with st.expander("🎨 主题切换", expanded=False):
         # 导出对话存档
         if st.button("📥 导出对话存档"):
             data = {
@@ -705,7 +707,6 @@ with st.sidebar:
                 file_name="conversation_export.json",
                 mime="application/json",
             )
-        # 主题切换
         st.markdown("---")
         st.markdown("**主题切换**")
         theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
