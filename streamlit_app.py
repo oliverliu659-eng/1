@@ -717,6 +717,22 @@ with st.sidebar:
             st.session_state.theme = "light_rose"
             st.rerun()
 
+# 在侧边栏外部添加一个明显的按钮，用于展开/收起侧边栏
+# 使用 st.button 放在主界面顶部，点击后通过 JavaScript 切换侧边栏
+if st.button("☰ 控制台", key="toggle_sidebar"):
+    st.components.v1.html(
+        """
+        <script>
+        const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const currentDisplay = sidebar.style.display;
+            sidebar.style.display = currentDisplay === 'none' ? 'block' : 'none';
+        }
+        </script>
+        """,
+        height=0,
+    )
+
 # 主界面标题
 st.title("Testing")
 
