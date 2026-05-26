@@ -399,7 +399,7 @@ def get_role_background() -> str:
         return "（背景获取失败）"
     return SYSTEM_PROMPT[start:end].strip()
 
-# ───── Streamlit 主界面 ─────────────────────────────────────────
+# ─── 主界面（重构版） ─────────────────────────────────────────
 st.set_page_config(
     page_title="无敌恋爱小游戏",
     page_icon="💖",
@@ -730,6 +730,44 @@ st.title("Testing")
 for msg in st.session_state.messages[1:]:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+
+# 操作按钮行（放在对话框旁边）
+col_buttons1, col_buttons2, col_buttons3, col_buttons4 = st.columns(4)
+with col_buttons1:
+    if st.button("🔄 重置对话"):
+        st.session_state.messages = create_messages()
+        clear_scene_memory()
+        st.rerun()
+with col_buttons2:
+    if st.button("📥 导出存档"):
+        data = {
+            "messages": st.session_state.messages,
+            "scene_memory": get_scene_memory(),
+        }
+        json_str = json.dumps(data, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="下载 JSON",
+            data=json_str,
+            file_name="conversation_export.json",
+            mime="application/json",
+        )
+with col_buttons3:
+    with st.expander("📜 角色背景", expanded=False):
+        st.markdown(get_role_background())
+with col_buttons4:
+    with st.expander("🎨 主题切换", expanded=False):
+        theme_labels = {"dark_gold": "暗金", "light_rose": "浅玫瑰"}
+        current_label = theme_labels.get(st.session_state.theme, st.session_state.theme)
+        st.markdown(f"当前: **{current_label}**")
+        col_sub_inner1, col_sub_inner2 = st.columns(2)
+        with col_sub_inner1:
+            if st.button("暗金"):
+                st.session_state.theme = "dark_gold"
+                st.rerun()
+        with col_sub_inner2:
+            if st.button("浅玫瑰"):
+                st.session_state.theme = "light_rose"
+                st.rerun()
 
 # 输入框
 user_input = st.chat_input("公子，请指示...")
