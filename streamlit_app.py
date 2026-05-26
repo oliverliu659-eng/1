@@ -700,6 +700,22 @@ with st.sidebar:
         )
     with st.expander("角色背景"):
         st.markdown(get_role_background())
+    # 显示当前主题选择
+    st.markdown("---")
+    st.markdown("**主题切换**")
+    theme_options = ["dark_gold", "light_rose"]
+    theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
+    current_label = theme_labels.get(st.session_state.theme, st.session_state.theme)
+    st.markdown(f"当前主题：**{current_label}**")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("暗金"):
+            st.session_state.theme = "dark_gold"
+            st.rerun()
+    with col2:
+        if st.button("浅玫瑰"):
+            st.session_state.theme = "light_rose"
+            st.rerun()
 
 # 主界面标题
 st.title("Testing")
