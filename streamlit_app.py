@@ -948,7 +948,7 @@ with col_buttons3:
 with col_buttons4:
     with st.expander("📜 角色背景", expanded=False):
         st.markdown("**角色背景**")
-        st.markdown(get_role_background()[:200]+"…")
+        st.markdown(get_role_background())
 with col_buttons5:
     with st.expander("🎨 主题切换", expanded=False):
         theme_labels = {"dark_gold": "暗金", "light_rose": "浅玫瑰"}
