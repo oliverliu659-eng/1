@@ -901,7 +901,7 @@ for msg in st.session_state.messages[1:]:
         st.markdown(msg["content"])
 
 # 操作按钮行（放在对话框上面）
-col_buttons1, col_buttons2, col_buttons3, col_buttons4 = st.columns(4)
+col_buttons1, col_buttons2, col_buttons3, col_buttons4, col_buttons5 = st.columns(5)
 with col_buttons1:
     if st.button("🔄 重新开始"):
         st.session_state.messages = create_messages()
@@ -946,10 +946,11 @@ with col_buttons3:
             except Exception as e:
                 st.error(f"读取存档失败: {e}")
 with col_buttons4:
-    with st.expander("📜 角色背景 / 🎨 主题", expanded=False):
+    with st.expander("📜 角色背景", expanded=False):
         st.markdown("**角色背景**")
         st.markdown(get_role_background()[:200]+"…")
-        st.markdown("---")
+with col_buttons5:
+    with st.expander("🎨 主题切换", expanded=False):
         theme_labels = {"dark_gold": "暗金", "light_rose": "浅玫瑰"}
         current_label = theme_labels.get(st.session_state.theme, st.session_state.theme)
         st.markdown(f"当前主题：**{current_label}**")
