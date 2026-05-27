@@ -906,6 +906,10 @@ if "summarized_index" not in st.session_state:
     st.session_state.summarized_index = 0
 if "_last_loaded_filename" not in st.session_state:
     st.session_state._last_loaded_filename = None
+if "_pending_loaded_data" not in st.session_state:
+    st.session_state._pending_loaded_data = None
+if "_pending_loaded_filename" not in st.session_state:
+    st.session_state._pending_loaded_filename = None
 
 with st.sidebar:
     pass
@@ -958,21 +962,48 @@ with col_buttons3:
         )
         if uploaded is not None:
             # 防止与上次相同的文件重复处理
-            last_name = st.session_state.get("_last_loaded_filename", None)
-            if uploaded.name != last_name:
+            pending_name = st.session_state.get("_pending_loaded_filename", None)
+            if uploaded.name != pending_name:
                 try:
                     content = uploaded.read().decode("utf-8")
                     data = json.loads(content)
-                    # 保留内部状态键，避免被存档覆盖
-                    keep_keys = ["_last_loaded_filename"]
+                    st.session_state._pending_loaded_data = data
+                    st.session_state._pending_loaded_filename = uploaded.name
+                    st.success("档案已暂存，请点击下方「确认载入」按钮以应用")
+                except Exception as e:
+                    st.error(f"读取存档失败: {e}")
+                    st.session_state._pending_loaded_data = None
+                    st.session_state._pending_loaded_filename = None
+
+        # 显示暂存数据预览和确认按钮
+        pending = st.session_state.get("_pending_loaded_data", None)
+        if pending is not None:
+            preview_msgs = pending.get("messages", [])
+            if len(preview_msgs) > 1:
+                # 取最后5条对话作为预览（跳过 system）
+                preview_parts = []
+                for msg in preview_msgs[-5:]:
+                    role_label = "🧑" if msg["role"] == "user" else "🤖"
+                    content_preview = msg["content"][:200]
+                    preview_parts.append(f"{role_label} {content_preview}")
+                preview_text = "\n\n".join(preview_parts)
+            else:
+                preview_text = "（存档中未包含对话历史）"
+            st.text_area("📝 对话预览 (最近部分)", value=preview_text, height=150, disabled=True)
+            if st.button("✅ 确认载入并开始"):
+                try:
+                    data = st.session_state._pending_loaded_data
+                    keep_keys = ["_last_loaded_filename", "_pending_loaded_data", "_pending_loaded_filename"]
                     for k, v in data.items():
                         if k not in keep_keys:
                             st.session_state[k] = v
-                    st.session_state._last_loaded_filename = uploaded.name
+                    st.session_state._last_loaded_filename = st.session_state._pending_loaded_filename
+                    st.session_state._pending_loaded_data = None
+                    st.session_state._pending_loaded_filename = None
                     st.success("记忆读取成功！")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"读取存档失败: {e}")
+                    st.error(f"载入失败: {e}")
 with col_buttons4:
     with st.expander("📜 角色背景", expanded=False):
         st.markdown("**角色背景**")
