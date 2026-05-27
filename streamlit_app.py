@@ -399,6 +399,133 @@ def get_role_background() -> str:
         return "（背景获取失败）"
     return SYSTEM_PROMPT[start:end].strip()
 
+
+def generate_auto_advance_prompt(messages: List[Dict[str, str]]) -> str:
+    """根据最近的对话历史，生成一句公子（用户）的行动/话语用于自动推进剧情。
+    如果调用 API 失败，返回一个预设的通用推进话语。"""
+    recent = messages[-6:] if len(messages) >= 6 else messages[1:]
+    context = "\n".join(
+        f"{m['role']}: {m['content'][:200]}"
+        for m in recent
+        if m["role"] in ("user", "assistant")
+    )
+    prompt = (
+        "你是「跋扈公子」这个角色扮演游戏的天然推进器。\n"
+        "根据以下最近的对话，用一句简短（不超过30字）的、属于公子的话或动作来自然推进剧情。\n"
+        "可以加入一些情绪的波动或场景的变化。\n"
+        "只输出内容本身，不要加任何引号或前缀。\n\n"
+        f"对话片段：\n{context}\n\n"
+        "公子的行动："
+    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "你是一位角色扮演游戏的剧情推进助手。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.9,
+            max_tokens=80,
+        )
+        text = response.choices[0].message.content.strip()
+        if text:
+            return text[:120]
+    except Exception as e:
+        print(f"【DEBUG】自动推进生成失败: {e}")
+    return "（公子抬眸望向远处，若有所思地抿了抿唇。）"
+
+
+def process_user_input(user_text: str):
+    """处理一次用户输入（手动输入或自动推进），包含压缩、API 调用、场景记忆等完整流程。"""
+    MAX_MSGS_BEFORE_COMPRESS = 15
+    if len(st.session_state.messages) > MAX_MSGS_BEFORE_COMPRESS:
+        st.session_state.messages, st.session_state.story_summary = compress_messages(
+            st.session_state.messages
+        )
+    st.session_state.messages.append({"role": "user", "content": user_text})
+    with st.chat_message("user"):
+        st.markdown(user_text)
+
+    event_text = maybe_inject_event(st.session_state.messages)
+    if event_text:
+        with st.chat_message("assistant"):
+            st.markdown(f"【突发事件】{event_text}")
+
+    cur_memory = get_scene_memory()
+    reply = call_deepseek_api(st.session_state.messages, scene_memory=cur_memory)
+    if reply:
+        if reply.startswith("沈逸:") or reply.startswith("公子:"):
+            print("检测到非法角色开头，重新生成回复...")
+            reply = call_deepseek_api(st.session_state.messages, scene_memory=cur_memory)
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+        add_scene_memory(reply)
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+        while len(st.session_state.messages) > 21:
+            idx = None
+            for i in range(1, len(st.session_state.messages)):
+                if st.session_state.messages[i]["role"] == "user":
+                    idx = i
+                    break
+            if idx is not None and idx + 1 < len(st.session_state.messages):
+                del st.session_state.messages[idx : idx + 2]
+            else:
+                break
+    else:
+        with st.chat_message("assistant"):
+            st.markdown("系统: 林雪暂时无法回复，请稍后重试。")
+        if st.session_state.messages[-1]["role"] == "user":
+            st.session_state.messages.pop()
+
+
+def compress_messages(messages: List[Dict[str, str]]) -> tuple:
+    """当历史对话过多时，将最旧的若干轮合并为一条摘要助理消息。
+    保留 system / 初始场景以及最近 MAX_KEPT 条用户‑助理对话。
+    返回 (新消息列表, 摘要文本)。"""
+    MAX_KEPT = 12                               # 保留的最近对话轮次（user + assistant 对）
+    MAX_MSGS_LIMIT = MAX_KEPT + 2 + 1           # system + scene + summary + kept
+    if len(messages) <= MAX_MSGS_LIMIT:
+        return messages, ""
+
+    old = messages[2:]                          # 除去 system 和初始 scene
+    to_summarize = old[:-MAX_KEPT]              # 将被合并的部分
+    keep = old[-MAX_KEPT:]                      # 最近保留的部分
+
+    lines = []
+    for m in to_summarize:
+        role = "用户" if m["role"] == "user" else "AI"
+        lines.append(f"{role}：{m['content']}")
+    text_to_summarize = "\n".join(lines)
+
+    summary_prompt = (
+        "你需将以下对话内容精简为一段剧情摘要，保留核心角色互动、关键情节和情感发展，"
+        "去除过于详细的环境/景色描写。回复必须简洁连贯，不超过300字。\n\n"
+        f"对话内容：\n{text_to_summarize}\n\n精简摘要："
+    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "你是一位剧情对话摘要助手。"},
+                {"role": "user", "content": summary_prompt},
+            ],
+            temperature=0.5,
+            max_tokens=500,
+        )
+        summary = response.choices[0].message.content.strip()
+        if not summary:
+            summary = "（摘要生成失败）"
+    except Exception as e:
+        print(f"【DEBUG】压缩总结失败: {e}")
+        summary = "（摘要生成失败）"
+
+    new_messages = messages[:2]                         # system + initial scene
+    new_messages.append({"role": "assistant",
+                         "content": f"【历史摘要】{summary}"})
+    new_messages.extend(keep)
+    return new_messages, summary
+
+
 # ─── 主界面（重构版） ─────────────────────────────────────────
 st.set_page_config(
     page_title="无敌恋爱小游戏",
@@ -678,6 +805,10 @@ if "event_step_counter" not in st.session_state:
     st.session_state.event_step_counter = 0
 if "last_event_turn" not in st.session_state:
     st.session_state.last_event_turn = -5
+if "story_summary" not in st.session_state:
+    st.session_state.story_summary = ""
+if "summarized_index" not in st.session_state:
+    st.session_state.summarized_index = 0
 
 with st.sidebar:
     st.header("⚙️ 游戏菜单")
@@ -688,25 +819,51 @@ with st.sidebar:
         clear_scene_memory()
         st.rerun()
     
+    # ── 自动推进剧情按钮 ──
+    if st.button("🤖 自动推进剧情"):
+        st.session_state.auto_advance_trigger = True
+        st.rerun()
+    
     # 2. 角色背景（单独的 expander）
     with st.expander("📜 角色背景", expanded=False):
         st.markdown(get_role_background())
     
     # 3. 导出与主题切换（单独的 expander）
     with st.expander("🎨 主题切换", expanded=False):
-        # 导出对话存档
-        if st.button("📥 导出对话存档"):
-            data = {
-                "messages": st.session_state.messages,
-                "scene_memory": get_scene_memory(),
-            }
-            json_str = json.dumps(data, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="下载 JSON",
-                data=json_str,
-                file_name="conversation_export.json",
-                mime="application/json",
-            )
+        # ── 存档/导出 ──
+        import time as _timetmp
+        save_filename = f"与少爷的记忆_{_timetmp.strftime('%Y%m%d_%H%M%S', _timetmp.localtime())}.save"
+        save_data = {
+            "messages": st.session_state.messages,
+            "scene_memory_parts": st.session_state.scene_memory_parts,
+            "character_memory": st.session_state.character_memory,
+            "event_step_counter": st.session_state.event_step_counter,
+            "last_event_turn": st.session_state.last_event_turn,
+            "story_summary": st.session_state.get("story_summary", ""),
+            "summarized_index": st.session_state.get("summarized_index", 0),
+        }
+        save_json = json.dumps(save_data, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="💾 封存这段记忆 (导出存档)",
+            data=save_json,
+            file_name=save_filename,
+            mime="application/json",
+            key="save_btn_sidebar",
+        )
+        # ── 读档 ──
+        uploaded = st.file_uploader("📂 唤醒尘封的记忆 (导入存档)", type=['save', 'json'], key="history_upload")
+        prev_upload_name = st.session_state.get("prev_upload_name", None)
+        if uploaded is not None and uploaded.name != prev_upload_name:
+            try:
+                content = uploaded.read().decode("utf-8")
+                data = json.loads(content)
+                for k, v in data.items():
+                    st.session_state[k] = v
+                st.session_state.prev_upload_name = uploaded.name
+                st.success("记忆读取成功！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"读取存档失败: {e}")
         st.markdown("---")
         st.markdown("**主题切换**")
         theme_labels = {"dark_gold": "暗金深邃", "light_rose": "浅玫瑰"}
@@ -771,44 +928,13 @@ with col_buttons4:
 
 # 输入框
 user_input = st.chat_input("公子，请指示...")
+
+# ── 自动推进剧情 ──
+if st.session_state.get("auto_advance_trigger"):
+    st.session_state.auto_advance_trigger = False
+    auto_text = generate_auto_advance_prompt(st.session_state.messages)
+    user_input = auto_text
+
 if user_input:
-    # 追加用户消息
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    # 检查突发事件
-    event_text = maybe_inject_event(st.session_state.messages)
-    if event_text:
-        with st.chat_message("assistant"):
-            st.markdown(f"【突发事件】{event_text}")
-
-    # 调用 API
-    cur_memory = get_scene_memory()
-    reply = call_deepseek_api(st.session_state.messages, scene_memory=cur_memory)
-    if reply:
-        # 防止非法角色开头
-        if reply.startswith("沈逸:") or reply.startswith("公子:"):
-            print("检测到非法角色开头，重新生成回复...")
-            reply = call_deepseek_api(st.session_state.messages, scene_memory=cur_memory)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        add_scene_memory(reply)
-        with st.chat_message("assistant"):
-            st.markdown(reply)
-        # 限制消息数量
-        while len(st.session_state.messages) > 21:
-            idx = None
-            for i in range(1, len(st.session_state.messages)):
-                if st.session_state.messages[i]["role"] == "user":
-                    idx = i
-                    break
-            if idx is not None and idx + 1 < len(st.session_state.messages):
-                del st.session_state.messages[idx:idx+2]
-            else:
-                break
-    else:
-        with st.chat_message("assistant"):
-            st.markdown("系统: 林雪暂时无法回复，请稍后重试。")
-        if st.session_state.messages[-1]["role"] == "user":
-            st.session_state.messages.pop()
+    process_user_input(user_input)
     st.rerun()
