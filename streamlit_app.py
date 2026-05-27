@@ -405,7 +405,13 @@ def call_deepseek_api(messages: List[Dict[str, str]],
 
 def get_role_background() -> str:
     start = SYSTEM_PROMPT.find("【公子背景】")
-    end = SYSTEM_PROMPT.find("八个角色可以同时出现在任意场景中")
+    end = SYSTEM_PROMPT.find("九个角色可以同时出现在任意场景中")
+    # fallback if exact string not found (e.g., whitespace difference)
+    if end == -1:
+        end = SYSTEM_PROMPT.find("9. **舟亿笛**")
+        if end != -1:
+            # 找到舟亿笛定义后，定位到其后第一个空行（角色定义结束）
+            end = SYSTEM_PROMPT.find("\n\n", end)
     if start == -1 or end == -1:
         return "（背景获取失败）"
     return SYSTEM_PROMPT[start:end].strip()
