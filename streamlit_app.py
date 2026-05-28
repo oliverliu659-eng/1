@@ -599,12 +599,24 @@ def get_role_background() -> str:
             return "（高中背景获取失败）"
         raw = prompt[start:end]
         lines = raw.split('\n')
+        bad_prefixes = ["AI描写", "AI扮演", "AI必须严格遵循"]
         filtered_lines = []
         for line in lines:
             stripped = line.strip()
             if stripped.startswith("AI"):
-                # 跳过 AI 扮演话术行
+                # 跳过 AI 管辖的整行
                 continue
+            # 如果行中后部包含 AI 指令，只保留指令之前的内容
+            min_idx = len(line)
+            for pat in bad_prefixes:
+                idx = line.find(pat)
+                if idx != -1 and idx < min_idx:
+                    min_idx = idx
+            if min_idx < len(line):
+                before = line[:min_idx].strip()
+                if not before:
+                    continue
+                line = before
             filtered_lines.append(line)
         background = '\n'.join(filtered_lines).strip()
         return background + "\n\n……（以上为高中篇角色介绍）"
