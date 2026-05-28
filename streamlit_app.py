@@ -446,6 +446,9 @@ def generate_event_text(messages: List[Dict[str, str]]) -> Optional[str]:
     return None
 
 def maybe_inject_event(messages: List[Dict[str, str]]) -> Optional[str]:
+    # 高中场景暂时禁用事件生成，避免干扰正常对话
+    if st.session_state.get("scene_mode") == "high_school":
+        return None
     # 使用 session_state 中的计数器
     if "event_step_counter" not in st.session_state:
         st.session_state.event_step_counter = 0
@@ -558,7 +561,10 @@ def generate_fulfillment_text(messages: List[Dict[str, str]]) -> str:
     """根据对话历史中出现的角色之间的约定（如相约一起走、放学堵人等），
     生成一段以括号开头的简短文字，表示其中某个约定正在被实现。
     仅返回括号内的文字（不包括括号本身，但保留括号标记）。如果生成失败返回空字符串。
+    高中场景暂时禁用此功能，避免额外API调用造成无响应。
     """
+    if st.session_state.get("scene_mode") == "high_school":
+        return ""
     relevant = [m for m in messages if m["role"] != "system"]
     if len(relevant) < 3:
         return ""
@@ -873,9 +879,9 @@ def process_user_input(user_text: str):
                 break
     else:
         with st.chat_message("assistant"):
-            st.markdown("系统: 林雪暂时无法回复，请稍后重试。")
-        if st.session_state.messages[-1]["role"] == "user":
-            st.session_state.messages.pop()
+            st.error("系统: 角色暂时无法回应（可能API超时），请稍后重试。")
+        # 保留用户输入，方便再次尝试
+        # 不删除用户消息，以免用户看不到自己的发言
 
 
 # ─── 主界面（重构版） ─────────────────────────────────────────
