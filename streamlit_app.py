@@ -1115,7 +1115,9 @@ st.title("Testing")
 # 渲染历史消息
 for msg in st.session_state.messages[1:]:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        # 用双换行使场景段落更清晰
+        content = msg["content"].replace("\n", "\n\n")
+        st.markdown(content)
 
 # 操作按钮行（放在对话框上面）
 col_buttons1, col_buttons2, col_buttons3, col_buttons4, col_buttons5 = st.columns(5)
