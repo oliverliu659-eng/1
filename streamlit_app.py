@@ -562,18 +562,19 @@ def get_role_background() -> str:
     if scenario_mode == "high_school":
         prompt = HIGH_SCHOOL_SYSTEM_PROMPT
         start = prompt.find("【男主背景】")
-        # 从【男主背景】开始到五个角色后第一个空行（角色定义结束）
-        end = prompt.find("5. **林溪**")
-        if end != -1:
-            # 找到林溪说完后的第一个空行（角色定义结束）
-            end = prompt.find("\n\n", end)
-            if end == -1:
-                end = len(prompt)
-        else:
-            end = len(prompt)
+        # 使用“重要规则（必须遵守）”作为结束标志，包含所有六个角色
+        end = prompt.find("重要规则（必须遵守）")
+        if end == -1:
+            # fallback：定位到林溪定义后的第一个空行
+            end = prompt.find("5. **林溪**")
+            if end != -1:
+                end = prompt.find("\n\n", end)
+                if end == -1:
+                    end = len(prompt)
         if start == -1:
             return "（高中背景获取失败）"
-        return prompt[start:end].strip() + "\n\n……（以上为高中篇角色介绍，其余角色待补充）"
+        background = prompt[start:end].strip()
+        return background + "\n\n……（以上为高中篇角色介绍）"
     else:
         # 大学篇
         start = SYSTEM_PROMPT.find("【公子背景】")
