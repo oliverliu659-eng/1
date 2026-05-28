@@ -387,11 +387,12 @@ def generate_event_text(messages: List[Dict[str, str]]) -> Optional[str]:
     if scenario_mode == "high_school":
         event_prompt_system = (
             "你是一位基于对话情节生成突发事件的AI。请根据下面的对话历史，"
-            "生成一个与当前高中校园、黑客暗战或校外黑恶势力（如糖一熊相关）紧密相连的突发事件。"
-            "例如：停电、某个角色突然闯入、路明非的手机突然收到暗网警告、或者校外混混突然堵门等。"
-            "必须具有戏剧性和随机性，紧贴前文。"
-            "故事角色包括：江遇、陈凡、陆修远、陈博、林溪、糖一熊。请只使用这些角色名称，不要使用其他角色名。"
-            "只输出事件描述文本，无需角色名称，且不要包含任何额外说明。"
+            "生成一个与当前高中校园紧密相关的突发事件，该事件必须紧贴最近几轮对话的逻辑。"
+            "事件必须是合理的，例如：学校突然发出的临时通知、某个角色的意外出现、课堂上发生的意外、"
+            "或者黑板上突然出现奇怪的字条等。"
+            "不得包含超自然或过于离谱的元素。"
+            "事件描述中允许提及其他角色，以增强连贯性。"
+            "只输出事件描述文本，无需额外说明。"
         )
     else:
         event_prompt_system = (
@@ -450,15 +451,25 @@ def maybe_inject_event(messages: List[Dict[str, str]]) -> Optional[str]:
         st.session_state.event_step_counter = 0
     if "last_event_turn" not in st.session_state:
         st.session_state.last_event_turn = -5
+    if "next_event_delay" not in st.session_state:
+        # 初始化首次事件在8～14次用户输入之后
+        st.session_state.next_event_delay = random.randint(8, 14)
     st.session_state.event_step_counter += 1
     if len(messages) < 4:
         return None
-    if st.session_state.event_step_counter - st.session_state.last_event_turn < 1:
+
+    # 计算自上一次事件以来经过的用户轮次
+    turns_since_last = st.session_state.event_step_counter - st.session_state.last_event_turn
+    if turns_since_last < st.session_state.next_event_delay:
         return None
-    if random.random() > 0.4:
-        return None
+
+    # 达到延迟后重新设定下一次的延迟（8～14）
+    st.session_state.next_event_delay = random.randint(8, 14)
+
+    # 避免连续事件（如果最近三条用户消息中含有“突然”则跳过）
     if any("突然" in m.get("content","") for m in messages[-3:] if m["role"]=="user"):
         return None
+
     event_text = generate_event_text(messages)
     if event_text:
         messages.append({"role": "user", "content": event_text})
@@ -543,6 +554,49 @@ def update_character_memory(reply: str):
             mem[current_role].append(line[:2000])
             mem[current_role] = mem[current_role][-100:]
 
+def generate_fulfillment_text(messages: List[Dict[str, str]]) -> str:
+    """根据对话历史中出现的角色之间的约定（如相约一起走、放学堵人等），
+    生成一段以括号开头的简短文字，表示其中某个约定正在被实现。
+    仅返回括号内的文字（不包括括号本身，但保留括号标记）。如果生成失败返回空字符串。
+    """
+    relevant = [m for m in messages if m["role"] != "system"]
+    if len(relevant) < 3:
+        return ""
+    recent = relevant[-6:]
+    context = "\n".join(
+        f"{'用户' if m['role'] == 'user' else '角色'}: {m['content'][:300]}"
+        for m in recent
+    )
+    prompt = (
+        "你是故事世界的“约定兑现AI”。请根据下面的最近对话历史，找出其中双方（或单方）承诺或约定的行动"
+        "（例如“放学等我”、“一起去吃饭”、“下课堵你”等）。"
+        "然后生成一段以括号包围的、不超过80字的文本，表示该约定现在正在被其中一个角色执行实现。"
+        "例如：（江遇放下笔站起身，朝路明非的座位走去。）如果你认为没有需要兑现的约定，则只回答“无”。\n\n"
+        f"对话片段：\n{context}\n\n"
+        "兑现文本："
+    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "你是一个角色扮演游戏中处理剧情约定的助手。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=120,
+        )
+        text = response.choices[0].message.content.strip()
+        if text in ("无", "无。"):
+            return ""
+        if not text.startswith("（") and not text.startswith("("):
+            text = "（" + text
+        if not text.endswith("）") and not text.endswith(")"):
+            text = text + "）"
+        return text
+    except Exception as e:
+        print(f"【约定兑现生成失败】{e}")
+        return ""
+
 def call_deepseek_api(messages: List[Dict[str, str]],
                       scene_memory: str = "",
                       max_retries: int = 3) -> Optional[str]:
@@ -560,6 +614,10 @@ def call_deepseek_api(messages: List[Dict[str, str]],
         if len(role_memory_str) > 3000:
             role_memory_str = role_memory_str[-3000:]
         sys_msg["content"] += "\n\n【各角色近期记忆】\n" + role_memory_str
+    # 生成角色约定兑现文本并附加
+    fulfillment_text = generate_fulfillment_text(messages)
+    if fulfillment_text:
+        sys_msg["content"] += "\n\n【当前角色约定兑现】\n" + fulfillment_text
     msgs.append(sys_msg)
     msgs.extend(messages[1:])
     for attempt in range(1, max_retries + 1):
