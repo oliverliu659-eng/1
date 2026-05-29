@@ -726,20 +726,23 @@ def _init_memory_store(mode: str = "university"):
 def rebuild_memory_from_messages(messages: list, mode: str = "university"):
     """从导入的对话历史中重建全部记忆存储。
 
-    遍历历史中的所有 AI 回复（包括初始场景描述），按时间顺序逐条
-    调用 update_memory_store 提取时间线、角色状态、场景信息等。
-    用于导入旧版存档时自动恢复记忆上下文。
+    按对话顺序交替处理用户消息和 AI 回复，确保场景转换和角色互动
+    都能被完整捕获。用户消息提供主角行为中的地点/时间线索，
+    AI 回复提供角色反应和剧情推进。
     """
     _init_memory_store(mode)
-    ai_replies = [
+    # 过滤掉 system prompt 和摘要消息
+    conversation = [
         m for m in messages
-        if m["role"] == "assistant"
+        if m["role"] in ("user", "assistant")
         and not m["content"].startswith("【历史摘要】")
     ]
     rebuilt = 0
-    for reply in ai_replies:
-        update_memory_store(reply["content"])
-        rebuilt += 1
+    for msg in conversation:
+        # 用户消息也传入 update_memory_store——用于捕获地点、时间等场景线索
+        update_memory_store(msg["content"])
+        if msg["role"] == "assistant":
+            rebuilt += 1
     store = st.session_state.memory_store
     if store:
         store["metadata"]["total_rounds"] = rebuilt
@@ -855,6 +858,16 @@ def build_memory_context() -> str:
         scene_info.append(f"天气：{scene['weather']}")
     if scene.get("present_characters"):
         scene_info.append(f"在场人物：{'、'.join(scene['present_characters'])}")
+    # 提示刚离开/新到来的人物
+    prev = set(scene.get("previous_present", []))
+    curr = set(scene.get("present_characters", []))
+    if prev and curr:
+        left = prev - curr
+        arrived = curr - prev
+        if left:
+            scene_info.append(f"已离开：{'、'.join(sorted(left))}")
+        if arrived:
+            scene_info.append(f"刚到来：{'、'.join(sorted(arrived))}")
     if scene_info:
         parts.append(f"\n【当前场景】{'，'.join(scene_info)}")
 
@@ -915,14 +928,23 @@ def update_memory_store(text: str):
             scene["time_of_day"] = m.group(1)
             break
 
-    # 提取地点
+    # 提取地点——多层匹配，覆盖直接移动和间接提及
     if scenario == "high_school":
+        hs_locations = r'(?:教室|539班|538班|食堂|校门[口外]?|走廊|办公室|教研室|宿舍|图书馆|车棚|看台|微机室|奶茶店|小卖部|后街|光荣榜前|升旗台|礼堂|体育馆|操场|篮球场|校门口|一班|班里|座位上|讲台[前边]?|天台|楼梯间|卫生间|车棚|花坛|梧桐树下|喷泉旁)'
         loc_patterns = [
-            r'(?:在|来到|走到|回到|站在|出了|进入)((?:教室|539班|538班|食堂|校门[口外]?|走廊|办公室|教研室|宿舍|图书馆|车棚|看台|微机室|奶茶店|小卖部|后街|光荣榜前|升旗台|礼堂|体育馆|操场|篮球场|校门口|一班|班里|座位上|讲台[前边]?))'
+            # 显式移动：在/来到/走到/回到…
+            r'(?:在|来到|走到|回到|站在|出了|进入|走进|跑进|跨进|踏进)(' + hs_locations + r')',
+            # 间接提及：教室里/食堂里/走廊上…
+            r'(' + hs_locations + r')(?:里|上|内|外|中|前|旁|边|附近)',
+            # 从XX出来/离开/走出
+            r'(?:从|离开|走出|跑出)(' + hs_locations + r')',
         ]
     else:
+        uni_locations = r'(?:图书馆|咖啡厅|自习室|宿舍|食堂|篮球场|奶茶店|教学楼|实验楼|音乐楼|体育馆|人工湖|广场|停车场|火锅店|书吧|便利店|洗衣店|校医院|商业街|宿舍楼下|艺术楼|天台|花坛|校门口|梧桐树下|喷泉旁|柳树旁|旧篮球场|地下停车场|走廊|阳台|餐厅|包间|办公室|会议室|咖啡屋)'
         loc_patterns = [
-            r'(?:在|来到|走到|回到|站在|出了|进入)((?:图书馆|咖啡厅|自习室|宿舍|食堂|篮球场|奶茶店|教学楼|实验楼|音乐楼|体育馆|人工湖|广场|停车场|火锅店|书吧|便利店|洗衣店|校医院|商业街|宿舍楼下|艺术楼|天台|花坛|校门口|梧桐树下|喷泉旁|柳树旁|旧篮球场|地下停车场|走廊|阳台))'
+            r'(?:在|来到|走到|回到|站在|出了|进入|走进|跑进|跨进|踏进)(' + uni_locations + r')',
+            r'(' + uni_locations + r')(?:里|上|内|外|中|前|旁|边|附近)',
+            r'(?:从|离开|走出|跑出)(' + uni_locations + r')',
         ]
     for pat in loc_patterns:
         m = _re.search(pat, text_clean)
@@ -932,21 +954,38 @@ def update_memory_store(text: str):
                 scene["location"] = new_loc
             break
 
-    # 提取天气
-    weather_pats = [r'(下雨了?|下雪了?|晴天|阴天|刮[起了]?风|暴雨|细雨|毛毛雨|雷阵雨|大雪|闷热|寒冷|凉爽|暖和)']
+    # 提取天气——扩展模式覆盖更多自然语言表达
+    weather_pats = [
+        r'(下雨了?|下雪了?|晴天|阴天|刮[起了]?风|暴雨|细雨|毛毛雨|雷阵雨|大雪|闷热|寒冷|凉爽|暖和)',
+        r'(?:阳光|太阳)(?:明媚|灿烂|火辣|刺眼|透过)',
+        r'(?:冷风|寒风|暖风|微风|凉风)(?:吹|拂|袭来)',
+        r'(?:雨|雪)(?:停[了]?|越下越大|渐[渐变]小)',
+    ]
     for pat in weather_pats:
         m = _re.search(pat, text_clean)
         if m:
-            scene["weather"] = m.group(1)
+            w = m.group(0) if m.lastindex is None else m.group(1)
+            if w:
+                scene["weather"] = w[:20]
             break
 
-    # 提取在场人物
-    present = set(scene.get("present_characters", []))
+    # 提取在场人物——每轮重新检测，角色不出现则逐渐退出
     all_chars = list(store["character_states"].keys())
+    previous_present = set(scene.get("present_characters", []))
+    present = set()
     for name in all_chars:
         if name in text_clean:
             present.add(name)
+    # 如果当前回复没检测到任何人（短回复/纯旁白），保留上一轮在场人物
+    if not present:
+        present = previous_present
+    # 记录上一轮在场人物，用于检测角色离场
+    scene["previous_present"] = list(previous_present)
     scene["present_characters"] = list(present)
+    # 更新每个角色的最后出现轮次
+    for name in present:
+        if name in store["character_states"]:
+            store["character_states"][name]["last_seen_round"] = current_round
 
     # ── 更新 Fact Locks 中的 confirmed_details ──
     # 锁定交通工具等易混淆细节
@@ -970,20 +1009,36 @@ def update_memory_store(text: str):
                 }
 
     # ── 更新 Timeline ──
-    # 检测是否有值得记录的关键事件
+    # 记录场景切换
+    prev_location = scene.get("location", "")
+    if prev_location and scene.get("location") and scene["location"] != prev_location:
+        store["timeline"].append({
+            "round": current_round,
+            "time_label": f"{scene.get('day','')} {scene.get('time_of_day','')}".strip(),
+            "location": scene["location"],
+            "event": f"场景切换：从{prev_location}来到{scene['location']}",
+            "characters_involved": list(present) if present else [],
+        })
+
+    # 检测值得记录的关键事件——多层信号覆盖更全面
     event_signals = [
-        (r'(?:突然|忽然|这时|正在此时|就在|紧接着|终于|结果)([^。！？]{15,80})', 2),
-        (r'([^。！？]{10,60}(?:出现|走进|离开|宣布|通知|广播|摔倒|哭了|笑了|发怒|点名|走进来|跑过来|冲过来|打电话|发消息|收到短信|推开|关上|拉起|放下|递给|接过|拿出|收起)[^。！？]{0,40})', 1),
+        # 高置信度：显式转折词引导的事件
+        (r'(?:突然|忽然|这时|正在此时|就在|紧接着|终于|结果|没想到|谁知|不料)([^。！？]{15,100})', 3),
+        # 动作驱动事件：角色做了明确动作
+        (r'([^。！？]{10,80}(?:出现|走进|离开|宣布|通知|广播|摔倒|哭了|笑了|发怒|点名|走进来|跑过来|冲过来|打电话|发消息|收到短信|推开|关上|拉起|放下|递给|接过|拿出|收起|转身|回头|停下|站住|愣住|怔住|沉默|开口|打断|插话|质问|反问|叹气|摇头|点头|皱眉|瞪了|瞥了)[^。！？]{0,40})', 2),
+        # 情感波动事件：角色有明显情绪变化
+        (r'([^。！？]{10,80}(?:红着眼|眼眶|泪水|哽咽|颤抖|攥紧|捏紧|握拳|咬[嘴唇牙]|脸色|僵住|呆住|怔怔|慌乱|慌张|心虚|躲闪|避开目光|低下头|别过脸)[^。！？]{0,40})', 2),
+        # 关系推进事件：角色之间的关键互动
+        (r'([^。！？]{10,80}(?:第一次|头一回|破天荒|竟然主动|犹豫了?一下[还]?是|鼓起勇气|下定决心|终于说|坦白|承认|暗示|试探)[^。！？]{0,40})', 2),
     ]
     for pat, confidence in event_signals:
         for m in _re.finditer(pat, text_clean):
             event_text = m.group(0).strip()
             if len(event_text) < 10 or len(event_text) > 150:
                 continue
-            # 避免重复
-            existing_events = [e["event"] for e in store["timeline"]]
-            if event_text not in existing_events:
-                # 识别涉及的角色
+            # 避免重复——使用事件文本前80字符作为去重键
+            existing_keys = {e["event"][:80] for e in store["timeline"]}
+            if event_text[:80] not in existing_keys:
                 involved = []
                 for name in all_chars:
                     if name in event_text:
@@ -992,51 +1047,64 @@ def update_memory_store(text: str):
                     "round": current_round,
                     "time_label": f"{scene.get('day','')} {scene.get('time_of_day','')}".strip(),
                     "location": scene.get("location", ""),
-                    "event": event_text[:120],
+                    "event": event_text[:150],
                     "characters_involved": involved,
                 })
                 break  # 每轮最多加一个事件
 
-    # Timeline 去重和裁剪
-    seen_events = set()
+    # Timeline 去重和裁剪——使用事件内容的哈希避免误删
+    seen_event_keys = set()
     unique_timeline = []
     for entry in store["timeline"]:
-        key = entry["event"][:50]
-        if key not in seen_events:
-            seen_events.add(key)
+        key = hash(entry["event"][:100])
+        if key not in seen_event_keys:
+            seen_event_keys.add(key)
             unique_timeline.append(entry)
     if len(unique_timeline) > 50:
         unique_timeline = unique_timeline[-50:]
     store["timeline"] = unique_timeline
 
     # ── 更新 Character States ──
+    # 本轮有角色发言/被提及，先更新所有被提及角色的活跃状态
     for name in all_chars:
-        if name not in text_clean:
-            continue
         cs = store["character_states"][name]
-        cs["last_active_round"] = current_round
+        if name in text_clean:
+            cs["last_active_round"] = current_round
 
-        # 提取角色对男主的态度变化线索
-        if scenario == "high_school":
-            # 江遇情感阶段检测
-            if name == "江遇":
-                _hs_update_jiangyu_stage(cs, text_clean, current_round)
-            # 陆修远态度检测
-            elif name == "陆修远":
-                _hs_update_luxiuyuan_stage(cs, text_clean, current_round)
-            # 糖一熊状态检测
-            elif name == "糖一熊":
-                _hs_update_tangyixiong_stage(cs, text_clean, current_round)
-        else:
-            # 林雪情感阶段检测
-            if name == "林雪":
-                _uni_update_linxue_stage(cs, text_clean, current_round)
-            # 李经理威胁线检测
-            elif name == "李经理":
-                _uni_update_lijingli_stage(cs, text_clean, current_round)
-            # 小美推波助澜检测
-            elif name == "小美":
-                _uni_update_xiaomei_stage(cs, text_clean, current_round)
+        # 提取角色对男主的态度变化线索（核心角色有专门检测器）
+        if name in text_clean:
+            if scenario == "high_school":
+                if name == "江遇":
+                    _hs_update_jiangyu_stage(cs, text_clean, current_round)
+                elif name == "陆修远":
+                    _hs_update_luxiuyuan_stage(cs, text_clean, current_round)
+                elif name == "糖一熊":
+                    _hs_update_tangyixiong_stage(cs, text_clean, current_round)
+                elif name == "陈博":
+                    _hs_update_chenbo_stage(cs, text_clean, current_round)
+                elif name == "林溪":
+                    _hs_update_linxi_stage(cs, text_clean, current_round)
+                elif name == "陈凡":
+                    _hs_update_chenfan_stage(cs, text_clean, current_round)
+            else:
+                if name == "林雪":
+                    _uni_update_linxue_stage(cs, text_clean, current_round)
+                elif name == "李经理":
+                    _uni_update_lijingli_stage(cs, text_clean, current_round)
+                elif name == "小美":
+                    _uni_update_xiaomei_stage(cs, text_clean, current_round)
+                elif name == "周云":
+                    _uni_update_zhouyun_stage(cs, text_clean, current_round)
+                elif name == "赵雅":
+                    _uni_update_zhaoya_stage(cs, text_clean, current_round)
+                elif name == "沈清":
+                    _uni_update_shenqing_stage(cs, text_clean, current_round)
+                elif name == "林宇":
+                    _uni_update_linyu_stage(cs, text_clean, current_round)
+                elif name == "管家老张":
+                    _uni_update_laozhang_stage(cs, text_clean, current_round)
+                elif name == "舟亿笛":
+                    _uni_update_zhouyidi_stage(cs, text_clean, current_round)
 
         # 提取最近互动
         interactions = []
@@ -1111,18 +1179,46 @@ def _hs_update_jiangyu_stage(cs: dict, text: str, round_num: int):
 
 def _hs_update_luxiuyuan_stage(cs: dict, text: str, round_num: int):
     """检测陆修远的态度变化。"""
-    if "调查路明非" in text or "查" in text and "路明非" in text and ("成绩" in text or "背景" in text or "底细" in text):
+    if "调查" in text and "路明非" in text and ("成绩" in text or "背景" in text or "底细" in text or "控分" in text):
         cs["current_plot_line"] = "暗中调查路明非的真实成绩和背景"
     if "冷笑" in text or "咬牙切齿" in text or "阴鸷" in text or "伪善" in text:
         cs["notes"] = "表面礼貌已难以维持，敌意开始外露"
+    if "追求" in text and "江遇" in text:
+        cs["current_plot_line"] = "继续追求江遇，视路明非为威胁"
 
 
 def _hs_update_tangyixiong_stage(cs: dict, text: str, round_num: int):
     """检测糖一熊的状态变化。"""
     if "教导主任" in text or "被抓" in text or "警告" in text or "收敛" in text:
         cs["emotion_stage"] = "被警告后收敛了几天"
-    if "又[来找在堵]" in text or "油嘴滑舌" in text:
+    if re.search(r'又[来找在堵]', text) or "油嘴滑舌" in text:
         cs["emotion_stage"] = "故态复萌，又开始骚扰"
+
+
+def _hs_update_chenbo_stage(cs: dict, text: str, round_num: int):
+    """检测陈博的状态。"""
+    if "路明非" in text and ("兄弟" in text or "哥们" in text or "够意思" in text):
+        cs["notes"] = "更加坚定把路明非当一辈子好哥们"
+    if "八卦" in text or "情报" in text or "听说" in text:
+        cs["notes"] = "正在发挥百晓生本色，收集情报中"
+
+
+def _hs_update_linxi_stage(cs: dict, text: str, round_num: int):
+    """检测林溪的情感状态。"""
+    if re.search(r'(?:揪|拉|拽|扯)(?:着|住)(?:路明非|路学长|他)(?:的)?(?:衣角|袖口|书包带)', text):
+        cs["emotion_stage"] = "对路学长更加依赖"
+    if "江遇" in text and ("紧张" in text or "不安" in text or "危机" in text or "吃醋" in text):
+        cs["notes"] = "察觉到江遇学姐与路学长的微妙氛围，心中隐隐不安"
+    if re.search(r'(?:鼓起勇气|红着脸|小声)(?:说|问|告诉)', text):
+        cs["emotion_stage"] = "开始尝试表达自己的心意"
+
+
+def _hs_update_chenfan_stage(cs: dict, text: str, round_num: int):
+    """检测班主任陈凡的状态。"""
+    if "股票" in text or "分析" in text or "涨" in text:
+        cs["notes"] = "又在找路明非帮忙看股票，对这个学生的真实实力心知肚明"
+    if "控分" in text or "隐藏" in text and "实力" in text:
+        cs["current_plot_line"] = "试图拆穿路明非的控分行为"
 
 
 # ── 大学篇角色情感阶段检测 ──
@@ -1151,7 +1247,6 @@ def _uni_update_linxue_stage(cs: dict, text: str, round_num: int):
         if any(re.search(s, text) for s in signals):
             cs["emotion_stage"] = "后期主动迎合"
             cs["attitude_to_mc"] = "完全放下防线，主动迎合甚至索取亲密，但嘴上仍不服软"
-
     # 检测秘密是否被揭露
     if "代考" in text and ("公子" in text or "沈逸" in text or "他" in text) and ("知道" in text or "发现" in text or "听说" in text):
         if "代考后被威胁" not in cs.get("revealed_secrets", []):
@@ -1176,6 +1271,56 @@ def _uni_update_xiaomei_stage(cs: dict, text: str, round_num: int):
         cs["notes"] = "正在私下教林雪如何与公子周旋"
     if "悄悄" in text and "公子" in text and ("发消息" in text or "调情" in text):
         cs["notes"] = "私下与公子有暧昧互动，但不会破坏林雪的机会"
+
+
+def _uni_update_zhouyun_stage(cs: dict, text: str, round_num: int):
+    """检测周云的暗中行动。"""
+    if "Python" in text or "辅导" in text or "代码" in text:
+        cs["current_plot_line"] = "以辅导为名接近林雪，刺探公子动向"
+    if "黑客" in text or "技术" in text and ("较量" in text or "竞争" in text):
+        cs["notes"] = "与公子的暗中技术较量升级中"
+
+
+def _uni_update_zhaoya_stage(cs: dict, text: str, round_num: int):
+    """检测赵雅的态度变化。"""
+    if "提醒" in text or "清醒" in text or "豪门" in text:
+        cs["notes"] = "继续旁敲侧击提醒林雪保持清醒，对公子的不信任未减"
+    if "周云" in text and ("看" in text or "偷" in text) and ("眼神" in text or "目光" in text):
+        cs["notes"] = "暗恋周云的心情愈发明显，但仍在克制"
+
+
+def _uni_update_shenqing_stage(cs: dict, text: str, round_num: int):
+    """检测沈清的出现与互动。"""
+    if "古筝" in text or "琴" in text or "演奏" in text:
+        cs["notes"] = "古典才女的气质在校园中格外引人注目"
+    if "公子" in text and ("好奇" in text or "注意" in text or "观察" in text):
+        cs["emotion_stage"] = "对公子的好奇逐渐加深，开始主动关注他的一举一动"
+
+
+def _uni_update_linyu_stage(cs: dict, text: str, round_num: int):
+    """检测林宇的剧情参与。"""
+    if "拳击" in text or "格斗" in text or "武术" in text:
+        cs["notes"] = "武术冠军的实力随时可以保护身边人"
+    if "周云" in text and ("盯" in text or "注意" in text or "小心" in text):
+        cs["notes"] = "对周云保持警惕，不相信他接近林雪的动机"
+
+
+def _uni_update_laozhang_stage(cs: dict, text: str, round_num: int):
+    """检测管家老张的状态。"""
+    if "警惕" in text or "戒备" in text or "观察" in text:
+        cs["notes"] = "保持高度警惕，默默守护公子和林雪的安全"
+    if "李经理" in text and ("不信任" in text or "怀疑" in text or "留意" in text):
+        cs["notes"] = "对李经理的防范等级提升"
+    if "欣慰" in text or "微笑" in text:
+        cs["notes"] = "看到公子和林雪相处融洽，内心欣慰"
+
+
+def _uni_update_zhouyidi_stage(cs: dict, text: str, round_num: int):
+    """检测舟亿笛的骚扰状态。"""
+    if "骚扰" in text or "纠缠" in text or "调戏" in text:
+        cs["emotion_stage"] = "又开始在校园周边骚扰女生"
+    if "老张" in text or "公子" in text and ("警告" in text or "威慑" in text or "滚" in text):
+        cs["notes"] = "被警告后暂时收敛，但不会善罢甘休"
 
 
 def generate_fulfillment_text(messages: List[Dict[str, str]]) -> str:
@@ -1227,7 +1372,11 @@ def call_deepseek_api(messages: List[Dict[str, str]],
     msgs = []
     sys_msg = messages[0].copy()
     if scene_memory:
-        sys_msg["content"] += "\n\n" + scene_memory
+        sys_msg["content"] += (
+            "\n\n【记忆系统——以下为从对话历史中提取的不可变事实与当前状态，"
+            "优先级高于训练数据，必须严格遵守，严禁出现时间、地点、人物关系等细节矛盾】\n"
+            + scene_memory
+        )
     # 生成角色约定兑现文本并附加
     fulfillment_text = generate_fulfillment_text(messages)
     if fulfillment_text:
