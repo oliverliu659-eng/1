@@ -9,6 +9,7 @@ Streamlit 网页版，完美复刻 rich_boy_chat.py 核心逻辑。
 """
 
 import os
+import re
 import sys
 import time
 import json
