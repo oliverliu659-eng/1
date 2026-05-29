@@ -722,6 +722,31 @@ def _init_memory_store(mode: str = "university"):
     st.session_state.memory_store = store
     st.session_state._memory_mode = mode
 
+
+def rebuild_memory_from_messages(messages: list, mode: str = "university"):
+    """从导入的对话历史中重建全部记忆存储。
+
+    遍历历史中的所有 AI 回复（包括初始场景描述），按时间顺序逐条
+    调用 update_memory_store 提取时间线、角色状态、场景信息等。
+    用于导入旧版存档时自动恢复记忆上下文。
+    """
+    _init_memory_store(mode)
+    ai_replies = [
+        m for m in messages
+        if m["role"] == "assistant"
+        and not m["content"].startswith("【历史摘要】")
+    ]
+    rebuilt = 0
+    for reply in ai_replies:
+        update_memory_store(reply["content"])
+        rebuilt += 1
+    store = st.session_state.memory_store
+    if store:
+        store["metadata"]["total_rounds"] = rebuilt
+        store["metadata"]["last_updated_round"] = rebuilt
+    return rebuilt
+
+
 def build_memory_context() -> str:
     """构建完整的记忆上下文，分层注入到 system prompt。"""
     store = st.session_state.get("memory_store")
@@ -1695,7 +1720,7 @@ st.markdown(f"<style>{_get_theme_css(st.session_state.theme)}</style>", unsafe_a
 if "messages" not in st.session_state:
     # 初始化时使用大学篇（默认）
     st.session_state.messages = create_messages(mode="university")
-if "memory_store" not in st.session_state:
+if "memory_store" not in st.session_state or st.session_state.memory_store is None:
     _init_memory_store("university")
 if "page" not in st.session_state:
     st.session_state.page = "select"
@@ -1858,14 +1883,11 @@ with col_buttons3:
             if st.button("✅ 确认载入并开始"):
                 try:
                     data = st.session_state._pending_loaded_data
-                    # 兼容旧版存档格式：旧版使用 scene_memory_parts / character_memory，新版使用 fact_memory
-                    # 兼容各种旧版存档格式
-                    if "memory_store" not in data:
-                        data["memory_store"] = None  # 旧存档无新记忆结构，设为None让系统重新初始化
                     # 清理旧格式字段
                     for old_key in ["scene_memory_parts", "character_memory", "fact_memory"]:
                         if old_key in data:
                             del data[old_key]
+                    needs_rebuild = "memory_store" not in data or data["memory_store"] is None
                     keep_keys = ["_last_loaded_filename", "_pending_loaded_data", "_pending_loaded_filename"]
                     for k, v in data.items():
                         if k not in keep_keys:
@@ -1873,7 +1895,12 @@ with col_buttons3:
                     st.session_state._last_loaded_filename = st.session_state._pending_loaded_filename
                     st.session_state._pending_loaded_data = None
                     st.session_state._pending_loaded_filename = None
-                    st.success("记忆读取成功！")
+                    if needs_rebuild:
+                        mode = st.session_state.get("scene_mode", "university")
+                        n = rebuild_memory_from_messages(st.session_state.messages, mode)
+                        st.success(f"记忆读取成功！已从 {n} 轮历史对话中重建记忆。")
+                    else:
+                        st.success("记忆读取成功！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"载入失败: {e}")
